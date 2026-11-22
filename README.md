@@ -157,14 +157,34 @@ marelo-motos/
 |---|---|---|
 | **GitHub Pages** | `PUBLICAR-SITE.bat` | Demonstração pública, sem servidor. Já no ar. |
 | **Railway** | `railway.json` pronto; conectar o repositório | Sistema completo, com servidor e banco em arquivo que **persiste** |
-| **Vercel** | `vercel.json` pronto; importar o repositório | Publica a mesma demonstração do Pages (a Vercel roda o `gerar-site.js` no build) |
+| **Vercel** | `vercel.json` pronto; importar o repositório | Sistema completo gravando no **Supabase** (com `DATABASE_URL`); sem ela, a mesma demonstração do Pages |
 
-> A Vercel **não** serve para o sistema completo: o disco dela é temporário,
-> e o arquivo do banco seria apagado a cada atualização. Para o sistema com
-> servidor, o caminho é o Railway (disco permanente) ou trocar o SQLite por
-> um banco de nuvem.
+> O disco da Vercel é temporário, por isso lá o banco não é o arquivo
+> SQLite, e sim o PostgreSQL do Supabase (ver a seção abaixo).
 
 ---
+
+## Vercel + Supabase (dados gravados de verdade)
+
+Na Vercel o sistema grava no **PostgreSQL do Supabase**. No computador e
+nos testes continua usando o arquivo SQLite. Quem decide é a variável de
+ambiente `DATABASE_URL`: se ela existe, `servidor/banco.js` usa o Supabase.
+
+1. **Supabase**: SQL Editor → colar `banco/supabase.sql` → Run (cria as
+   tabelas, os dados de teste e liga o RLS). Para gerar o arquivo de novo:
+   `node ferramentas/gerar-sql-supabase.js`.
+2. **Supabase**: botão **Connect** → *Transaction pooler* → copiar a URL e
+   trocar `[YOUR-PASSWORD]` pela senha do banco.
+3. **Vercel**: Settings → Environment Variables → `DATABASE_URL` = essa URL
+   → **Redeploy**.
+
+Sem a variável, a Vercel publica a demonstração com o banco no navegador.
+A senha do banco fica só na Vercel, nunca no código.
+
+Como funciona: as consultas foram escritas para o SQLite e são traduzidas
+para o PostgreSQL em `servidor/traduzir-sql.js`. A função `api/index.js`
+atende as rotas `/api/...` com o mesmo tratador do servidor local
+(`servidor/http.js`), e as sessões de login ficam na tabela `sessao`.
 
 ## Sobre os dados
 

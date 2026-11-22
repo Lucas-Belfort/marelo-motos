@@ -12,8 +12,15 @@
 // token) vem de banco.js. Assim este arquivo roda igual no servidor e
 // na versao publicada no GitHub Pages, que usa outro banco.js.
 import { um, executar, conferirSenha, gerarToken } from './banco.js';
+import * as banco from './banco.js';
 
 const SESSOES = new Map();
+
+// Onde as sessoes ficam: banco.js decide (memoria no SQLite, tabela no
+// Supabase). A versao do navegador nao tem essas funcoes e usa a memoria.
+const guardar = banco.guardarSessao || ((t, usuario, expiraEm) => SESSOES.set(t, { usuario, expiraEm }));
+const ler = banco.lerSessao || ((t) => SESSOES.get(t) || null);
+const apagar = banco.apagarSessao || ((t) => SESSOES.delete(t));
 const DURACAO_SESSAO = 8 * 60 * 60 * 1000; // 8 horas
 
 // ---------------------------------------------------------------------
@@ -95,20 +102,20 @@ export function entrar(email, senha) {
   };
 
   const token = gerarToken();
-  SESSOES.set(token, { usuario, expiraEm: Date.now() + DURACAO_SESSAO });
+  guardar(token, usuario, Date.now() + DURACAO_SESSAO);
   return { token, usuario, permissoes: permissoesDe(usuario) };
 }
 
 export function sair(token) {
-  SESSOES.delete(token);
+  if (token) apagar(token);
 }
 
 export function usuarioDaSessao(token) {
   if (!token) return null;
-  const sessao = SESSOES.get(token);
+  const sessao = ler(token);
   if (!sessao) return null;
   if (sessao.expiraEm < Date.now()) {
-    SESSOES.delete(token);
+    apagar(token);
     return null;
   }
   return sessao.usuario;

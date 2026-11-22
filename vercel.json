@@ -1,7 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "node ferramentas/gerar-site.js",
+  "buildCommand": "node ferramentas/build-vercel.js",
   "outputDirectory": "site",
   "framework": null,
-  "cleanUrls": true
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/:rota*", "destination": "/api?rota=:rota*" }
+  ],
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "{servidor/**,banco/**}",
+      "maxDuration": 20
+    }
+  }
 }

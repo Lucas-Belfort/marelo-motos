@@ -12,11 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
 import { abrirBanco, ARQUIVO_BANCO } from './banco.js';
-import {
-  encontrarRota, pode, usuarioDaSessao,
-} from './api.js';
-import { lerTokenDoCookie } from './auth.js';
-import { ErroDeRegra } from './regras.js';
+import { tratarApi } from './http.js';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const PASTA_PUBLICA = join(AQUI, '..', 'publico');
@@ -32,31 +28,6 @@ const TIPOS = {
   '.ico': 'image/x-icon',
 };
 
-function responder(res, status, dados, cabecalhos = {}) {
-  const corpo = JSON.stringify(dados);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    ...cabecalhos,
-  });
-  res.end(corpo);
-}
-
-async function lerCorpo(req) {
-  if (req.method === 'GET' || req.method === 'DELETE') return {};
-  const partes = [];
-  for await (const parte of req) partes.push(parte);
-  if (partes.length === 0) return {};
-  try {
-    return JSON.parse(Buffer.concat(partes).toString('utf8'));
-  } catch {
-    throw new ErroDeRegra('Os dados enviados não estao em um formato válido.');
-  }
-}
-
-// ---------------------------------------------------------------------
-// Arquivos das telas
-// ---------------------------------------------------------------------
 async function servirArquivo(res, caminhoUrl) {
   let relativo = decodeURIComponent(caminhoUrl.split('?')[0]);
   if (relativo === '/') relativo = '/index.html';
@@ -94,60 +65,7 @@ const servidor = createServer(async (req, res) => {
     return servirArquivo(res, req.url);
   }
 
-  try {
-    const alvo = encontrarRota(req.method, caminho);
-    if (!alvo) return responder(res, 404, { erro: 'Recurso nao encontrado.' });
-
-    const token = lerTokenDoCookie(req.headers.cookie);
-    const usuario = usuarioDaSessao(token);
-
-    // rotas com permissao null sao publicas (apenas o login)
-    if (alvo.permissao !== null) {
-      if (!usuario) {
-        return responder(res, 401, { erro: 'Sessao encerrada. Entre novamente.' });
-      }
-      if (alvo.permissao !== 'livre' && !pode(usuario, alvo.permissao)) {
-        return responder(res, 403, {
-          erro: 'Seu perfil de acesso nao permite esta operacao.',
-          permissaoExigida: alvo.permissao,
-        });
-      }
-    }
-
-    const corpo = await lerCorpo(req);
-    const query = Object.fromEntries(url.searchParams);
-    const resultado = alvo.manipulador({
-      params: alvo.params, corpo, query, usuario, token, req,
-    });
-
-    // o login devolve o token: vira cookie de sessao
-    if (caminho === '/api/login' && resultado?.token) {
-      return responder(res, 200, resultado, {
-        'Set-Cookie': `marelo_sessao=${resultado.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`,
-      });
-    }
-    if (caminho === '/api/sair') {
-      return responder(res, 200, resultado, {
-        'Set-Cookie': 'marelo_sessao=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
-      });
-    }
-
-    return responder(res, 200, resultado ?? { ok: true });
-  } catch (erro) {
-    if (erro instanceof ErroDeRegra) {
-      return responder(res, erro.status || 400, { erro: erro.message });
-    }
-    // erro de restricao do banco vira mensagem legivel
-    const texto = String(erro?.message || erro);
-    if (texto.includes('UNIQUE constraint')) {
-      return responder(res, 400, { erro: 'Ja existe um registro com este dado unico.' });
-    }
-    if (texto.includes('FOREIGN KEY')) {
-      return responder(res, 400, { erro: 'Registro vinculado a outro cadastro.' });
-    }
-    console.error('[erro]', erro);
-    return responder(res, 500, { erro: 'Erro interno do sistema. Verifique o terminal.' });
-  }
+  return tratarApi(req, res, caminho, url);
 });
 
 abrirBanco();

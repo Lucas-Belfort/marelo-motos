@@ -5,7 +5,6 @@
 //  modulo node:sqlite que ja vem no Node 22+.
 // =====================================================================
 
-import { DatabaseSync } from 'node:sqlite';
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -16,6 +15,15 @@ const PASTA_BANCO = join(AQUI, '..', 'banco');
 const ARQUIVO_BANCO = process.env.MARELO_DB || join(PASTA_BANCO, 'marelo.db');
 
 export const SENHA_PADRAO = 'marelo123';
+
+// ---------------------------------------------------------------------
+// Qual banco usar
+//   - com a variavel DATABASE_URL (Vercel): PostgreSQL do Supabase
+//   - sem ela (no computador, nos testes): arquivo SQLite, como sempre
+// ---------------------------------------------------------------------
+export const MODO = process.env.DATABASE_URL ? 'postgres' : 'sqlite';
+const pg = MODO === 'postgres' ? await import('./banco-postgres.js') : null;
+const { DatabaseSync } = MODO === 'sqlite' ? await import('node:sqlite') : {};
 
 let db;
 
@@ -47,6 +55,7 @@ export function conferirSenha(senha, armazenado) {
 // Abertura e preparo do banco
 // ---------------------------------------------------------------------
 export function abrirBanco() {
+  if (pg) return pg.abrirBanco(definirSenhasPendentes);
   if (db) return db;
 
   mkdirSync(PASTA_BANCO, { recursive: true });
@@ -74,30 +83,33 @@ export function abrirBanco() {
 // O seed.sql grava 'DEFINIR' na coluna senha_hash; aqui a senha padrao
 // vira hash de verdade. Assim o arquivo .sql nunca contem senha.
 function definirSenhasPendentes() {
-  const pendentes = db.prepare("SELECT id FROM usuario WHERE senha_hash = 'DEFINIR'").all();
+  const pendentes = todos("SELECT id FROM usuario WHERE senha_hash = 'DEFINIR'");
   if (pendentes.length === 0) return;
-  const atualizar = db.prepare('UPDATE usuario SET senha_hash = ? WHERE id = ?');
-  for (const u of pendentes) atualizar.run(gerarHash(SENHA_PADRAO), u.id);
+  for (const u of pendentes) executar('UPDATE usuario SET senha_hash = ? WHERE id = ?', gerarHash(SENHA_PADRAO), u.id);
 }
 
 // ---------------------------------------------------------------------
 // Atalhos de consulta
 // ---------------------------------------------------------------------
 export function todos(sql, ...params) {
+  if (pg) { abrirBanco(); return pg.todos(sql, ...params); }
   return abrirBanco().prepare(sql).all(...params);
 }
 
 export function um(sql, ...params) {
+  if (pg) { abrirBanco(); return pg.um(sql, ...params); }
   return abrirBanco().prepare(sql).get(...params);
 }
 
 export function executar(sql, ...params) {
+  if (pg) { abrirBanco(); return pg.executar(sql, ...params); }
   return abrirBanco().prepare(sql).run(...params);
 }
 
 // Executa varias operacoes como uma unica transacao. Se qualquer passo
 // falhar, nada e gravado — usado no fechamento da venda (RF-04).
 export function emTransacao(fn) {
+  if (pg) { abrirBanco(); return pg.emTransacao(fn); }
   const banco = abrirBanco();
   banco.exec('BEGIN');
   try {
@@ -113,6 +125,7 @@ export function emTransacao(fn) {
 // Fecha o banco e libera o arquivo. No Windows, o arquivo so pode ser
 // apagado depois disso — usado ao final dos testes automatizados.
 export function fecharBanco() {
+  if (pg) return pg.fecharBanco();
   if (!db) return;
   try { db.close(); } catch { /* ja estava fechado */ }
   db = undefined;
@@ -127,12 +140,32 @@ export function parametro(chave, padrao = null) {
 // Copia de seguranca da base (RNFS-06)
 // ---------------------------------------------------------------------
 export function gerarBackup() {
+  // No Supabase a copia de seguranca diaria e feita pela propria plataforma
+  if (pg) return 'Backup diário automático do Supabase';
   const pasta = join(PASTA_BANCO, 'backups');
   mkdirSync(pasta, { recursive: true });
   const carimbo = new Date().toISOString().slice(0, 19).replaceAll(':', '-');
   const destino = join(pasta, `marelo-${carimbo}.db`);
   abrirBanco().exec(`VACUUM INTO '${destino.replaceAll('\\', '/').replaceAll("'", "''")}'`);
   return destino;
+}
+
+// ---------------------------------------------------------------------
+// Sessoes de login: em memoria no SQLite (um processo so) e no banco
+// no Supabase (a Vercel roda varias instancias, sem memoria comum).
+// ---------------------------------------------------------------------
+const SESSOES = new Map();
+export function guardarSessao(token, usuario, expiraEm) {
+  if (pg) { abrirBanco(); return pg.guardarSessao(token, usuario, expiraEm); }
+  SESSOES.set(token, { usuario, expiraEm });
+}
+export function lerSessao(token) {
+  if (pg) { abrirBanco(); return pg.lerSessao(token); }
+  return SESSOES.get(token) || null;
+}
+export function apagarSessao(token) {
+  if (pg) { abrirBanco(); return pg.apagarSessao(token); }
+  SESSOES.delete(token);
 }
 
 export { ARQUIVO_BANCO };

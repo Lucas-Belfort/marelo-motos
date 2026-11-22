@@ -236,7 +236,7 @@ rota('GET', '/api/meu-painel', 'livre', ({ usuario }) => {
     JOIN cliente c ON c.id = n.cliente_id
     LEFT JOIN moto m ON m.id = n.moto_id
     WHERE n.vendedor_id = ? AND n.etapa NOT IN ('fechada','perdida')
-    ORDER BY n.atualizado_em DESC LIMIT 10`, id);
+    ORDER BY n.atualizado_em DESC, n.id DESC LIMIT 10`, id);
 
   const ferias = um(`
     SELECT data_inicio, data_fim FROM ferias
@@ -331,7 +331,7 @@ rota('GET', '/api/funil', 'comercial.ler', ({ usuario }) => {
        LEFT JOIN moto m ON m.id = n.moto_id
        JOIN funcionario f ON f.id = n.vendedor_id
       WHERE n.etapa <> 'perdida' ${carteira.sql}
-      ORDER BY n.atualizado_em DESC`,
+      ORDER BY n.atualizado_em DESC, n.id DESC`,
     ...carteira.params
   );
 
@@ -361,7 +361,7 @@ rota('GET', '/api/funil', 'comercial.ler', ({ usuario }) => {
       WHERE c.situacao <> 'cancelado'
         AND strftime('%Y-%m', c.data_emissao) = strftime('%Y-%m', date('now','localtime'))
         ${carteiraContrato.sql}
-      ORDER BY c.data_emissao DESC`,
+      ORDER BY c.data_emissao DESC, c.id DESC`,
     ...carteiraContrato.params
   );
 
@@ -457,7 +457,7 @@ rota('POST', '/api/negociacoes/:id/fechar', 'comercial.escrever', ({ params, cor
 //  RF-02 — SAC
 // =====================================================================
 rota('GET', '/api/chamados', 'sac.ler', () =>
-  todos('SELECT * FROM vw_chamado ORDER BY CASE situacao_real WHEN \'atrasado\' THEN 0 WHEN \'andamento\' THEN 1 ELSE 2 END, data_abertura DESC')
+  todos('SELECT * FROM vw_chamado ORDER BY CASE situacao_real WHEN \'atrasado\' THEN 0 WHEN \'andamento\' THEN 1 ELSE 2 END, data_abertura DESC, id DESC')
 );
 
 rota('POST', '/api/chamados', 'sac.escrever', ({ corpo }) => {
@@ -502,7 +502,7 @@ rota('GET', '/api/estoque', 'estoque.ler', ({ query }) => {
     `SELECT * FROM vw_estoque
       WHERE (? IS NULL OR situacao = ?)
         AND (? IS NULL OR codigo LIKE ? OR modelo LIKE ? OR placa LIKE ?)
-      ORDER BY parada_90_dias DESC, dias_patio DESC`,
+      ORDER BY parada_90_dias DESC, dias_patio DESC, id`,
     situacao, situacao, busca, busca, busca, busca
   );
 });
@@ -668,7 +668,7 @@ rota('GET', '/api/contratos', 'financeiro.ler', () =>
       JOIN cliente cl ON cl.id = c.cliente_id
       JOIN moto m ON m.id = c.moto_id
       JOIN funcionario f ON f.id = c.vendedor_id
-     ORDER BY c.data_emissao DESC`)
+     ORDER BY c.data_emissao DESC, c.id DESC`)
 );
 
 rota('GET', '/api/contratos/:id', 'financeiro.ler', ({ params }) => {
@@ -710,7 +710,7 @@ rota('GET', '/api/parcelas', 'financeiro.ler', ({ query }) => {
   return todos(
     `SELECT * FROM vw_parcela
       WHERE (? IS NULL OR situacao_real = ?)
-      ORDER BY vencimento`, situacao, situacao);
+      ORDER BY vencimento, id`, situacao, situacao);
 });
 
 rota('POST', '/api/parcelas/:id/baixar', 'financeiro.escrever', ({ params }) => {
@@ -834,7 +834,7 @@ rota('GET', '/api/rh/ferias', 'rh.ler', () =>
     SELECT fe.*, f.nome,
            CAST(julianday(fe.data_inicio) - julianday(date('now','localtime')) AS INTEGER) AS faltam_dias
       FROM ferias fe JOIN funcionario f ON f.id = fe.funcionario_id
-     ORDER BY fe.data_inicio DESC`)
+     ORDER BY fe.data_inicio DESC, fe.id DESC`)
 );
 
 // =====================================================================
@@ -938,7 +938,7 @@ rota('GET', '/api/busca', 'livre', ({ query, usuario }) => {
          JOIN cliente cl ON cl.id = c.cliente_id
          JOIN moto m     ON m.id = c.moto_id
         WHERE c.numero LIKE ? COLLATE NOCASE OR cl.nome LIKE ? COLLATE NOCASE
-        ORDER BY c.data_emissao DESC LIMIT ${LIMITE}`,
+        ORDER BY c.data_emissao DESC, c.id DESC LIMIT ${LIMITE}`,
       like, like
     );
     if (contratos.length) {
@@ -958,7 +958,7 @@ rota('GET', '/api/busca', 'livre', ({ query, usuario }) => {
       `SELECT id, numero, assunto, cliente_nome, situacao_real FROM vw_chamado
         WHERE numero LIKE ? COLLATE NOCASE OR assunto LIKE ? COLLATE NOCASE
            OR cliente_nome LIKE ? COLLATE NOCASE
-        ORDER BY data_abertura DESC LIMIT ${LIMITE}`,
+        ORDER BY data_abertura DESC, id DESC LIMIT ${LIMITE}`,
       like, like, like
     );
     if (chamados.length) {
